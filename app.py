@@ -171,12 +171,12 @@ elif menu == "📂 Partidos almacenados":
     # ============ ACCIONES ============
     st.markdown("### 🎮 Registrar acciones")
     acciones = {
-        "🚀 Tiro a puerta" ,
-        "🎯 Llegada",
-        "❌ Falta",
-        "📦 Centro",
-        "✅ 2ª jugada ganada",
-        "❌ 2ª jugada perdida",
+        "🚀 Tiro a puerta": "Tiro a puerta",
+        "🎯 Llegada": "Llegada",
+        "❌ Falta": "Falta",
+        "📦 Centro": "Centro",
+        "✅ 2ª jugada ganada": "Segunda jugada (ganada)",
+        "❌ 2ª jugada perdida": "Segunda jugada (perdida)",
     }
 
     c1, c2 = st.columns(2)
