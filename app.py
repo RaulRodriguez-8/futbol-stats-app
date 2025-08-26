@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import date, datetime
 from supabase import create_client, Client
 import time
-import matplotlib.pyplot as plt
 
 # ==============================
 # Conexión Supabase
@@ -231,40 +230,35 @@ elif menu == "📂 Partidos almacenados":
                 insertar_evento(int(partido_sel), partido["visitante"], accion, minuto_actual, tiempo_formateado)
                 st.success(f"{accion} registrado para {partido['visitante']} en {tiempo_formateado}")
 
-    # ============ DATOS DEL PARTIDO ============
-    df = eventos_por_partido(int(partido_sel))
-    if not df.empty:
-        st.markdown("### 📊 Eventos del partido")
-        st.dataframe(df, use_container_width=True, height=300)
+# ============ DATOS DEL PARTIDO ============
+df = eventos_por_partido(int(partido_sel))
+if not df.empty:
+    st.markdown("### 📊 Eventos del partido")
+    st.dataframe(df, use_container_width=True, height=300)
 
-        st.markdown("### 📈 Resumen por equipo")
-        resumen = (
-            df.groupby(["equipo", "accion"])
-              .size()
-              .reset_index(name="Cantidad")
-              .sort_values(["equipo", "Cantidad"], ascending=[True, False])
-        )
+    st.markdown("### 📈 Resumen por equipo")
+    resumen = (
+        df.groupby(["equipo", "accion"])
+          .size()
+          .reset_index(name="Cantidad")
+          .sort_values(["equipo", "Cantidad"], ascending=[True, False])
+    )
 
-        colL, colV = st.columns(2)
+    colL, colV = st.columns(2)
 
-        if not resumen[resumen["equipo"]==partido["local"]].empty:
-            colL.subheader(partido["local"])
-            tabla_local = resumen[resumen["equipo"]==partido["local"]][["accion","Cantidad"]].set_index("accion")
-            colL.table(tabla_local)
+    if not resumen[resumen["equipo"]==partido["local"]].empty:
+        colL.subheader(partido["local"])
+        tabla_local = resumen[resumen["equipo"]==partido["local"]][["accion","Cantidad"]].set_index("accion")
+        colL.table(tabla_local)
+        colL.bar_chart(tabla_local)
 
-            # Gráfico de barras Local
-            fig, ax = plt.subplots()
-            ax.barh(tabla_local.index, tabla_local["Cantidad"], color="green")
-            ax.set_title(f"Acciones de {partido['local']}")
-            colL.pyplot(fig)
+    if not resumen[resumen["equipo"]==partido["visitante"]].empty:
+        colV.subheader(partido["visitante"])
+        tabla_visitante = resumen[resumen["equipo"]==partido["visitante"]][["accion","Cantidad"]].set_index("accion")
+        colV.table(tabla_visitante)
+        colV.bar_chart(tabla_visitante)
 
-        if not resumen[resumen["equipo"]==partido["visitante"]].empty:
-            colV.subheader(partido["visitante"])
-            tabla_visitante = resumen[resumen["equipo"]==partido["visitante"]][["accion","Cantidad"]].set_index("accion")
-            colV.table(tabla_visitante)
-
-            # Gráfico de barras Visitante
-            fig, ax = plt.subplots()
-            ax.barh(tabla_visitante.index, tabla_visitante["Cantidad"], color="orange")
-            ax.set_title(f"Acciones de {partido['visitante']}")
-            colV.pyplot(fig)
+    # --- Gráfico comparativo único ---
+    st.markdown("### ⚔️ Comparativa de equipos")
+    comparativa = resumen.pivot(index="accion", columns="equipo", values="Cantidad").fillna(0)
+    st.bar_chart(comparativa)
