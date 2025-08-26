@@ -22,5 +22,6 @@ create table if not exists eventos (
   accion text,
   parte text,
   minuto int,
+  tiempo_exact text,
   timestamp timestamptz default now()
 );
