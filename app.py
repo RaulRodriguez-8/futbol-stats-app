@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import date, datetime
 from supabase import create_client, Client
 import time
-
+import plotly.express as px
 # ==============================
 # Conexión Supabase
 # ==============================
@@ -153,7 +153,7 @@ elif menu == "📂 Partidos almacenados":
     with col_local:
         st.subheader(f"🏠 {partido['local']}")
         for emoji, accion in acciones.items():
-            if st.button(f"{emoji} {accion}", key=f"{accion}_{partido['local']}"):
+            if st.button(f"{emoji} {accion} ({partido['local']})", key=f"{accion}_{partido['local']}"):
                 insertar_evento(int(partido_sel), partido["local"], accion, minuto_actual, tiempo_formateado)
                 st.success(f"{accion} registrado para {partido['local']} en {tiempo_formateado}")
 
@@ -226,27 +226,50 @@ elif menu == "📂 Partidos almacenados":
     with col_visitante:
         st.subheader(f"🚩 {partido['visitante']}")
         for emoji, accion in acciones.items():
-            if st.button(f"{emoji} {accion}", key=f"{accion}_{partido['visitante']}"):
+            if st.button(f"{emoji} {accion} ({partido['visitante']})", key=f"{accion}_{partido['visitante']}"):
                 insertar_evento(int(partido_sel), partido["visitante"], accion, minuto_actual, tiempo_formateado)
                 st.success(f"{accion} registrado para {partido['visitante']} en {tiempo_formateado}")
 
-    # ============ DATOS DEL PARTIDO ============
-    df = eventos_por_partido(int(partido_sel))
-    if not df.empty:
-        st.markdown("### 📊 Eventos del partido")
-        st.dataframe(df, use_container_width=True, height=300)
+# ============ DATOS DEL PARTIDO ============
+df = eventos_por_partido(int(partido_sel))
+if not df.empty:
+    st.markdown("### 📊 Eventos del partido")
+    st.dataframe(df, use_container_width=True, height=300)
 
-        st.markdown("### 📈 Resumen por equipo")
-        resumen = (
-            df.groupby(["equipo", "accion"])
-              .size()
-              .reset_index(name="Cantidad")
-              .sort_values(["equipo", "Cantidad"], ascending=[True, False])
+    st.markdown("### 📈 Resumen por equipo")
+    resumen = (
+        df.groupby(["equipo", "accion"])
+          .size()
+          .reset_index(name="Cantidad")
+          .sort_values(["equipo", "Cantidad"], ascending=[True, False])
+    )
+
+    colL, colV = st.columns(2)
+
+    # --- Resumen equipo local ---
+    if not resumen[resumen["equipo"]==partido["local"]].empty:
+        colL.subheader(partido["local"])
+        tabla_local = resumen[resumen["equipo"]==partido["local"]][["accion","Cantidad"]].set_index("accion")
+        colL.table(tabla_local)
+
+        fig_local = px.bar(
+            tabla_local.reset_index(),
+            x="Cantidad", y="accion",
+            orientation="h",
+            title=f"Acciones de {partido['local']}"
         )
-        colL, colV = st.columns(2)
-        if not resumen[resumen["equipo"]==partido["local"]].empty:
-            colL.subheader(partido["local"])
-            colL.table(resumen[resumen["equipo"]==partido["local"]][["accion","Cantidad"]].set_index("accion"))
-        if not resumen[resumen["equipo"]==partido["visitante"]].empty:
-            colV.subheader(partido["visitante"])
-            colV.table(resumen[resumen["equipo"]==partido["visitante"]][["accion","Cantidad"]].set_index("accion"))
+        colL.plotly_chart(fig_local, use_container_width=True)
+
+    # --- Resumen equipo visitante ---
+    if not resumen[resumen["equipo"]==partido["visitante"]].empty:
+        colV.subheader(partido["visitante"])
+        tabla_visitante = resumen[resumen["equipo"]==partido["visitante"]][["accion","Cantidad"]].set_index("accion")
+        colV.table(tabla_visitante)
+
+        fig_visitante = px.bar(
+            tabla_visitante.reset_index(),
+            x="Cantidad", y="accion",
+            orientation="h",
+            title=f"Acciones de {partido['visitante']}"
+        )
+        colV.plotly_chart(fig_visitante, use_container_width=True)
