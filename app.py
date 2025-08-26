@@ -28,6 +28,8 @@ def crear_partido(local, visitante, competicion, jornada, lugar, fecha):
         "jornada": jornada,
         "lugar": lugar,
         "fecha": str(fecha),
+        "goles_local": 0,
+        "goles_visitante": 0,
     }
     res = supabase.table("partidos").insert(data).execute()
     return res.data[0] if res.data else None
@@ -48,7 +50,7 @@ def insertar_evento(pid, equipo, accion, minuto, tiempo_exact):
         "accion": accion,
         "parte": "Automático",
         "minuto": minuto,
-        "tiempo_exact": tiempo_exact,  # ⏱ mm:ss
+        "tiempo_exact": tiempo_exact,
         "timestamp": ts,
     }
     supabase.table("eventos").insert(data).execute()
@@ -119,39 +121,6 @@ elif menu == "📂 Partidos almacenados":
             "elapsed_time": 0
         }
 
-    c1, c2, c3, c4 = st.columns(4)
-
-    if c1.button("▶️ Iniciar"):
-        st.session_state.cronometro = {
-            "activo": True,
-            "pausado": False,
-            "start_time": time.time(),
-            "elapsed_time": 0
-        }
-        st.success("⏱️ Partido iniciado")
-
-    if c2.button("⏸️ Pausar"):
-        if st.session_state.cronometro["activo"] and not st.session_state.cronometro["pausado"]:
-            st.session_state.cronometro["elapsed_time"] += time.time() - st.session_state.cronometro["start_time"]
-            st.session_state.cronometro["pausado"] = True
-            st.success("⏸️ Cronómetro pausado")
-
-    if c3.button("🔄 Reanudar"):
-        if st.session_state.cronometro["activo"] and st.session_state.cronometro["pausado"]:
-            st.session_state.cronometro["start_time"] = time.time()
-            st.session_state.cronometro["pausado"] = False
-            st.success("▶️ Cronómetro reanudado")
-
-    if c4.button("⏹️ Detener"):
-        st.session_state.cronometro = {
-            "activo": False,
-            "pausado": False,
-            "start_time": None,
-            "elapsed_time": 0
-        }
-        st.success("🛑 Cronómetro detenido")
-
-    # Calcular tiempo actual
     minuto_actual = 0
     tiempo_formateado = "00:00"
     if st.session_state.cronometro["activo"]:
@@ -166,10 +135,9 @@ elif menu == "📂 Partidos almacenados":
         minuto_actual = minutos
         tiempo_formateado = f"{minutos:02d}:{segundos:02d}"
 
-    st.markdown(f"### ⏱ Tiempo actual: {tiempo_formateado} (min {minuto_actual}')")
+    # ============ TABLERO DE CONTROL ============
+    st.markdown("## 🎛 Tablero de control")
 
-    # ============ ACCIONES ============
-    st.markdown("### 🎮 Registrar acciones")
     acciones = {
         "🚀 Tiro a puerta": "Tiro a puerta",
         "🎯 Llegada": "Llegada",
@@ -179,14 +147,86 @@ elif menu == "📂 Partidos almacenados":
         "❌ 2ª jugada perdida": "Segunda jugada (perdida)",
     }
 
-    c1, c2 = st.columns(2)
-    for i, (emoji, accion) in enumerate(acciones.items()):
-        with [c1, c2][i % 2]:
-            if st.button(f"{emoji} {accion} - {partido['local']}"):
+    col_local, col_centro, col_visitante = st.columns([3,2,3])
+
+    # --- Columna Local ---
+    with col_local:
+        st.subheader(f"🏠 {partido['local']}")
+        for emoji, accion in acciones.items():
+            if st.button(f"{emoji} {accion}", key=f"{accion}_{partido['local']}"):
                 insertar_evento(int(partido_sel), partido["local"], accion, minuto_actual, tiempo_formateado)
                 st.success(f"{accion} registrado para {partido['local']} en {tiempo_formateado}")
 
-            if st.button(f"{emoji} {accion} - {partido['visitante']}"):
+    # --- Columna Centro (Cronómetro + Marcador) ---
+    with col_centro:
+        st.subheader("⏱ Cronómetro")
+        st.markdown(f"### {tiempo_formateado} (min {minuto_actual}')")
+
+        c1, c2, c3, c4 = st.columns(4)
+        if c1.button("▶️", key="start"):
+            st.session_state.cronometro = {
+                "activo": True,
+                "pausado": False,
+                "start_time": time.time(),
+                "elapsed_time": 0
+            }
+            st.success("Partido iniciado")
+
+        if c2.button("⏸", key="pause"):
+            if st.session_state.cronometro["activo"] and not st.session_state.cronometro["pausado"]:
+                st.session_state.cronometro["elapsed_time"] += time.time() - st.session_state.cronometro["start_time"]
+                st.session_state.cronometro["pausado"] = True
+                st.warning("Cronómetro pausado")
+
+        if c3.button("🔄", key="resume"):
+            if st.session_state.cronometro["activo"] and st.session_state.cronometro["pausado"]:
+                st.session_state.cronometro["start_time"] = time.time()
+                st.session_state.cronometro["pausado"] = False
+                st.info("Cronómetro reanudado")
+
+        if c4.button("⏹", key="stop"):
+            st.session_state.cronometro = {
+                "activo": False,
+                "pausado": False,
+                "start_time": None,
+                "elapsed_time": 0
+            }
+            st.error("Partido detenido")
+
+        # --- Marcador ---
+        st.subheader("⚽ Marcador")
+        goles_local = partido.get("goles_local", 0)
+        goles_visitante = partido.get("goles_visitante", 0)
+
+        mcol1, mcol2, mcol3 = st.columns([3,2,3])
+        with mcol1:
+            if st.button("➖", key="menos_local") and goles_local > 0:
+                goles_local -= 1
+                supabase.table("partidos").update({"goles_local": goles_local}).eq("id", partido_sel).execute()
+            st.markdown(f"## {goles_local}")
+            if st.button("➕", key="mas_local"):
+                goles_local += 1
+                supabase.table("partidos").update({"goles_local": goles_local}).eq("id", partido_sel).execute()
+                insertar_evento(int(partido_sel), partido["local"], "Gol", minuto_actual, tiempo_formateado)
+
+        with mcol2:
+            st.markdown(f"### {partido['local']} - {partido['visitante']}")
+
+        with mcol3:
+            if st.button("➖", key="menos_visitante") and goles_visitante > 0:
+                goles_visitante -= 1
+                supabase.table("partidos").update({"goles_visitante": goles_visitante}).eq("id", partido_sel).execute()
+            st.markdown(f"## {goles_visitante}")
+            if st.button("➕", key="mas_visitante"):
+                goles_visitante += 1
+                supabase.table("partidos").update({"goles_visitante": goles_visitante}).eq("id", partido_sel).execute()
+                insertar_evento(int(partido_sel), partido["visitante"], "Gol", minuto_actual, tiempo_formateado)
+
+    # --- Columna Visitante ---
+    with col_visitante:
+        st.subheader(f"🚩 {partido['visitante']}")
+        for emoji, accion in acciones.items():
+            if st.button(f"{emoji} {accion}", key=f"{accion}_{partido['visitante']}"):
                 insertar_evento(int(partido_sel), partido["visitante"], accion, minuto_actual, tiempo_formateado)
                 st.success(f"{accion} registrado para {partido['visitante']} en {tiempo_formateado}")
 
