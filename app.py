@@ -48,7 +48,7 @@ def insertar_evento(pid, equipo, accion, minuto, tiempo_exact):
         "accion": accion,
         "parte": "Automático",
         "minuto": minuto,
-        "tiempo_exact": tiempo_exact,
+        "tiempo_exact": tiempo_exact,  # ⏱ mm:ss
         "timestamp": ts,
     }
     supabase.table("eventos").insert(data).execute()
@@ -104,7 +104,11 @@ elif menu == "📂 Partidos almacenados":
     )
     partido = get_partido(int(partido_sel))
 
-    st.markdown(f"## 📌 {partido['nombre']} — {partido['competicion']} — Jornada {partido.get('jornada','')} — {partido.get('fecha','')} — {partido.get('lugar','')}")
+    st.markdown(
+        f"## 📌 {partido['nombre']} — {partido['competicion']} "
+        f"— Jornada {partido.get('jornada','')} "
+        f"— {partido.get('fecha','')} — {partido.get('lugar','')}"
+    )
 
     # ============ CRONÓMETRO ============
     if "cronometro" not in st.session_state:
@@ -112,16 +116,18 @@ elif menu == "📂 Partidos almacenados":
             "activo": False,
             "pausado": False,
             "start_time": None,
-            "elapsed_time": 0  # en segundos
+            "elapsed_time": 0
         }
 
     c1, c2, c3, c4 = st.columns(4)
 
     if c1.button("▶️ Iniciar"):
-        st.session_state.cronometro["activo"] = True
-        st.session_state.cronometro["pausado"] = False
-        st.session_state.cronometro["elapsed_time"] = 0
-        st.session_state.cronometro["start_time"] = time.time()
+        st.session_state.cronometro = {
+            "activo": True,
+            "pausado": False,
+            "start_time": time.time(),
+            "elapsed_time": 0
+        }
         st.success("⏱️ Partido iniciado")
 
     if c2.button("⏸️ Pausar"):
@@ -137,10 +143,12 @@ elif menu == "📂 Partidos almacenados":
             st.success("▶️ Cronómetro reanudado")
 
     if c4.button("⏹️ Detener"):
-        st.session_state.cronometro["activo"] = False
-        st.session_state.cronometro["pausado"] = False
-        st.session_state.cronometro["elapsed_time"] = 0
-        st.session_state.cronometro["start_time"] = None
+        st.session_state.cronometro = {
+            "activo": False,
+            "pausado": False,
+            "start_time": None,
+            "elapsed_time": 0
+        }
         st.success("🛑 Cronómetro detenido")
 
     # Calcular tiempo actual
@@ -150,7 +158,10 @@ elif menu == "📂 Partidos almacenados":
         if st.session_state.cronometro["pausado"]:
             total_seconds = st.session_state.cronometro["elapsed_time"]
         else:
-            total_seconds = st.session_state.cronometro["elapsed_time"] + (time.time() - st.session_state.cronometro["start_time"])
+            total_seconds = (
+                st.session_state.cronometro["elapsed_time"]
+                + (time.time() - st.session_state.cronometro["start_time"])
+            )
         minutos, segundos = divmod(int(total_seconds), 60)
         minuto_actual = minutos
         tiempo_formateado = f"{minutos:02d}:{segundos:02d}"
