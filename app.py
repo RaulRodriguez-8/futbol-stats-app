@@ -14,6 +14,10 @@ def get_client() -> Client:
 
 supabase = get_client()
 
+# Para ver en el panel de diagnóstico el último resultado de update
+if "last_clock_update" not in st.session_state:
+    st.session_state.last_clock_update = None
+
 # ==============================
 # Helpers de tiempo persistente
 # ==============================
@@ -42,7 +46,26 @@ def compute_clock_from_db(partido: dict):
     return total_seconds, f"{horas:02d}:{minutos:02d}:{segundos:02d}"
 
 def set_clock_state(pid: int, **fields):
-    supabase.table("partidos").update(fields).eq("id", pid).execute()
+    """
+    Actualiza el estado del reloj en DB y guarda un snapshot del resultado
+    en session_state para el panel de diagnóstico.
+    """
+    try:
+        # Fuerza el id a int para evitar no-matchear por tipos
+        res = supabase.table("partidos").update(fields).eq("id", int(pid)).execute()
+        st.session_state.last_clock_update = {
+            "ok": True,
+            "sent_fields": fields,
+            "response": getattr(res, "data", None)
+        }
+        return res
+    except Exception as e:
+        st.session_state.last_clock_update = {
+            "ok": False,
+            "error": str(e),
+            "sent_fields": fields
+        }
+        raise
 
 # ==============================
 # Funciones DB
@@ -73,24 +96,24 @@ def listar_partidos():
     return pd.DataFrame(res.data or [])
 
 def get_partido(pid: int):
-    res = supabase.table("partidos").select("*").eq("id", pid).single().execute()
+    res = supabase.table("partidos").select("*").eq("id", int(pid)).single().execute()
     return res.data
 
 def insertar_evento(pid, equipo, accion, minuto, tiempo_exact):
     ts = datetime.now().isoformat(timespec="seconds")
     data = {
-        "partido_id": pid,
+        "partido_id": int(pid),
         "equipo": equipo,
         "accion": accion,
         "parte": "Automático",
-        "minuto": minuto,
+        "minuto": int(minuto),
         "tiempo_exact": tiempo_exact,  # HH:MM:SS
         "timestamp": ts,
     }
     supabase.table("eventos").insert(data).execute()
 
 def eventos_por_partido(pid):
-    res = supabase.table("eventos").select("*").eq("partido_id", pid).order("id").execute()
+    res = supabase.table("eventos").select("*").eq("partido_id", int(pid)).order("id").execute()
     return pd.DataFrame(res.data or [])
 
 # ==============================
@@ -161,6 +184,18 @@ elif menu == "📂 Partidos almacenados":
         f"— {partido.get('fecha','')} — {partido.get('lugar','')}"
     )
 
+    # 🧪 Diagnóstico del reloj
+    with st.expander("🧪 Diagnóstico del reloj (DB)"):
+        st.write({
+            "clock_active": partido.get("clock_active"),
+            "clock_paused": partido.get("clock_paused"),
+            "clock_start": partido.get("clock_start"),
+            "clock_elapsed": partido.get("clock_elapsed"),
+        })
+        st.caption("Si clock_active=False o clock_start=None, el reloj no está en marcha.")
+        if st.session_state.last_clock_update is not None:
+            st.write("Último update reloj:", st.session_state.last_clock_update)
+
     # Tiempo actual (segundos totales + HH:MM:SS)
     segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
     minuto_actual = segundos_totales // 60
@@ -168,7 +203,7 @@ elif menu == "📂 Partidos almacenados":
     # ============ TABLERO DE CONTROL ============
     st.markdown("## 🎛 Tablero de control")
 
-    acciones = partido.get("acciones", ["Tiro a puerta", "Llegada", "Falta, Centro"])
+    acciones = partido.get("acciones", ["Tiro a puerta", "Llegada", "Falta", "Centro"])
 
     col_local, col_centro, col_visitante = st.columns([3,2,3])
 
@@ -249,11 +284,11 @@ elif menu == "📂 Partidos almacenados":
         mcol1, mcol2, mcol3 = st.columns([3,2,3])
         with mcol1:
             if st.button("➖", key="menos_local") and goles_local > 0:
-                supabase.table("partidos").update({"goles_local": goles_local - 1}).eq("id", partido_sel).execute()
+                supabase.table("partidos").update({"goles_local": goles_local - 1}).eq("id", int(partido_sel)).execute()
                 partido = get_partido(int(partido_sel))
             st.markdown(f"## {goles_local}")
             if st.button("➕", key="mas_local"):
-                supabase.table("partidos").update({"goles_local": goles_local + 1}).eq("id", partido_sel).execute()
+                supabase.table("partidos").update({"goles_local": goles_local + 1}).eq("id", int(partido_sel)).execute()
                 segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
                 insertar_evento(int(partido_sel), partido["local"], "Gol", segs // 60, t)
                 partido = get_partido(int(partido_sel))
@@ -263,11 +298,11 @@ elif menu == "📂 Partidos almacenados":
 
         with mcol3:
             if st.button("➖", key="menos_visitante") and goles_visitante > 0:
-                supabase.table("partidos").update({"goles_visitante": goles_visitante - 1}).eq("id", partido_sel).execute()
+                supabase.table("partidos").update({"goles_visitante": goles_visitante - 1}).eq("id", int(partido_sel)).execute()
                 partido = get_partido(int(partido_sel))
             st.markdown(f"## {goles_visitante}")
             if st.button("➕", key="mas_visitante"):
-                supabase.table("partidos").update({"goles_visitante": goles_visitante + 1}).eq("id", partido_sel).execute()
+                supabase.table("partidos").update({"goles_visitante": goles_visitante + 1}).eq("id", int(partido_sel)).execute()
                 segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
                 insertar_evento(int(partido_sel), partido["visitante"], "Gol", segs // 60, t)
                 partido = get_partido(int(partido_sel))
