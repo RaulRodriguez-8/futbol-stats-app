@@ -21,6 +21,10 @@ def ahora_utc():
     return datetime.now(timezone.utc)
 
 def compute_clock_from_db(partido: dict):
+    """
+    Calcula (segundos_totales, 'HH:MM:SS') usando los campos persistidos en DB:
+    clock_elapsed (seg), clock_active, clock_paused, clock_start (UTC).
+    """
     elapsed = partido.get("clock_elapsed", 0) or 0
     active  = partido.get("clock_active", False)
     paused  = partido.get("clock_paused", False)
@@ -33,8 +37,9 @@ def compute_clock_from_db(partido: dict):
         delta = (ahora_utc() - start).total_seconds()
         total_seconds += max(0, int(delta))
 
-    minutos, segundos = divmod(int(total_seconds), 60)
-    return minutos, f"{minutos:02d}:{segundos:02d}"
+    horas, resto = divmod(total_seconds, 3600)
+    minutos, segundos = divmod(resto, 60)
+    return total_seconds, f"{horas:02d}:{minutos:02d}:{segundos:02d}"
 
 def set_clock_state(pid: int, **fields):
     supabase.table("partidos").update(fields).eq("id", pid).execute()
@@ -79,7 +84,7 @@ def insertar_evento(pid, equipo, accion, minuto, tiempo_exact):
         "accion": accion,
         "parte": "Automático",
         "minuto": minuto,
-        "tiempo_exact": tiempo_exact,
+        "tiempo_exact": tiempo_exact,  # HH:MM:SS
         "timestamp": ts,
     }
     supabase.table("eventos").insert(data).execute()
@@ -156,13 +161,14 @@ elif menu == "📂 Partidos almacenados":
         f"— {partido.get('fecha','')} — {partido.get('lugar','')}"
     )
 
-    # Tiempo actual
-    minuto_actual, tiempo_formateado = compute_clock_from_db(partido)
+    # Tiempo actual (segundos totales + HH:MM:SS)
+    segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
+    minuto_actual = segundos_totales // 60
 
     # ============ TABLERO DE CONTROL ============
     st.markdown("## 🎛 Tablero de control")
 
-    acciones = partido.get("acciones", ["Tiro a puerta", "Llegada", "Falta", "Centro"])
+    acciones = partido.get("acciones", ["Tiro a puerta", "Llegada", "Falta, Centro"])
 
     col_local, col_centro, col_visitante = st.columns([3,2,3])
 
@@ -171,18 +177,21 @@ elif menu == "📂 Partidos almacenados":
         st.subheader(f"🏠 {partido['local']}")
         for accion in acciones:
             if st.button(f"{accion} ({partido['local']})", key=f"{accion}_{partido['local']}"):
-                m, t = compute_clock_from_db(get_partido(int(partido_sel)))
-                insertar_evento(int(partido_sel), partido["local"], accion, m, t)
+                segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
+                insertar_evento(int(partido_sel), partido["local"], accion, segs // 60, t)
                 st.success(f"{accion} registrado para {partido['local']} en {t}")
                 partido = get_partido(int(partido_sel))
+                segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
+                minuto_actual = segundos_totales // 60
 
     # --- Columna Centro (Cronómetro + Marcador persistentes) ---
     with col_centro:
         st.subheader("⏱ Cronómetro")
-        st.markdown(f"### {tiempo_formateado} (min {minuto_actual}')")
+        st.markdown(f"### {tiempo_formateado}")  # HH:MM:SS
 
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("▶️", key="start"):
+            # iniciar desde cero
             set_clock_state(
                 int(partido_sel),
                 clock_active=True,
@@ -191,6 +200,7 @@ elif menu == "📂 Partidos almacenados":
                 clock_start=ahora_utc().isoformat()
             )
             partido = get_partido(int(partido_sel))
+            segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
 
         if c2.button("⏸", key="pause"):
             p = get_partido(int(partido_sel))
@@ -208,6 +218,7 @@ elif menu == "📂 Partidos almacenados":
                 clock_start=None
             )
             partido = get_partido(int(partido_sel))
+            segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
 
         if c3.button("🔄", key="resume"):
             set_clock_state(
@@ -217,6 +228,7 @@ elif menu == "📂 Partidos almacenados":
                 clock_start=ahora_utc().isoformat()
             )
             partido = get_partido(int(partido_sel))
+            segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
 
         if c4.button("⏹", key="stop"):
             set_clock_state(
@@ -227,6 +239,7 @@ elif menu == "📂 Partidos almacenados":
                 clock_start=None
             )
             partido = get_partido(int(partido_sel))
+            segundos_totales, tiempo_formateado = compute_clock_from_db(partido)
 
         # --- Marcador (persistente) ---
         st.subheader("⚽ Marcador")
@@ -241,8 +254,8 @@ elif menu == "📂 Partidos almacenados":
             st.markdown(f"## {goles_local}")
             if st.button("➕", key="mas_local"):
                 supabase.table("partidos").update({"goles_local": goles_local + 1}).eq("id", partido_sel).execute()
-                m, t = compute_clock_from_db(get_partido(int(partido_sel)))
-                insertar_evento(int(partido_sel), partido["local"], "Gol", m, t)
+                segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
+                insertar_evento(int(partido_sel), partido["local"], "Gol", segs // 60, t)
                 partido = get_partido(int(partido_sel))
 
         with mcol2:
@@ -255,8 +268,8 @@ elif menu == "📂 Partidos almacenados":
             st.markdown(f"## {goles_visitante}")
             if st.button("➕", key="mas_visitante"):
                 supabase.table("partidos").update({"goles_visitante": goles_visitante + 1}).eq("id", partido_sel).execute()
-                m, t = compute_clock_from_db(get_partido(int(partido_sel)))
-                insertar_evento(int(partido_sel), partido["visitante"], "Gol", m, t)
+                segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
+                insertar_evento(int(partido_sel), partido["visitante"], "Gol", segs // 60, t)
                 partido = get_partido(int(partido_sel))
 
     # --- Columna Visitante ---
@@ -264,8 +277,8 @@ elif menu == "📂 Partidos almacenados":
         st.subheader(f"🚩 {partido['visitante']}")
         for accion in acciones:
             if st.button(f"{accion} ({partido['visitante']})", key=f"{accion}_{partido['visitante']}"):
-                m, t = compute_clock_from_db(get_partido(int(partido_sel)))
-                insertar_evento(int(partido_sel), partido["visitante"], accion, m, t)
+                segs, t = compute_clock_from_db(get_partido(int(partido_sel)))
+                insertar_evento(int(partido_sel), partido["visitante"], accion, segs // 60, t)
                 st.success(f"{accion} registrado para {partido['visitante']} en {t}")
                 partido = get_partido(int(partido_sel))
 
